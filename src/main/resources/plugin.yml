@@ -1,0 +1,9 @@
+name: HyperX
+version: '1.0'
+main: io.github.moregrayner.miniame.hyperX.HyperX
+api-version: '1.21'
+authors: [ 짱레인 ]
+description: 윈터오브짱레인
+commands:
+  hyperthread:
+    usage: /hyperthread start
