@@ -143,6 +143,12 @@ class HyperX: JavaPlugin(), Listener {
         val session = findSessionByPlayer(player) ?: return
 
         if (player !in session.allControlPlayers) return
+
+        if (session.isPaused) {
+            event.isCancelled = true
+            return
+        }
+
         if (!player.isOnline) {
             player.sendMessage("§c저런! [${session.getRole(player)}](이)가 없어 아무것도 하지 못합니다!")
             event.isCancelled = true
@@ -155,7 +161,6 @@ class HyperX: JavaPlugin(), Listener {
                 if (event.action == Action.RIGHT_CLICK_AIR || event.action == Action.RIGHT_CLICK_BLOCK) {
                     val item = session.mainPlayer.inventory.itemInMainHand
 
-                    // 먹을 수 있거나 마실 수 있는 아이템인지 확인
                     if (isConsumable(item)) {
                         session.startConsuming(item)
                     } else {
@@ -175,6 +180,12 @@ class HyperX: JavaPlugin(), Listener {
     fun onBlockBreak(event: BlockBreakEvent) {
         val player = event.player
         val session = findSessionByPlayer(player) ?: return
+
+        if (session.isPaused) {
+            event.isCancelled = true
+            return
+        }
+
         if (player == session.leftArmPlayer) {
             if (!player.isOnline) {
                 player.sendMessage("§c저런! [${session.getRole(player)}]이 없어 아무것도 하지 못합니다!")
@@ -190,6 +201,12 @@ class HyperX: JavaPlugin(), Listener {
     fun onBlockPlace(event: BlockPlaceEvent) {
         val player = event.player
         val session = findSessionByPlayer(player) ?: return
+
+        if (session.isPaused) {
+            event.isCancelled = true
+            return
+        }
+
         if (player == session.rightArmPlayer) {
             if (!player.isOnline) {
                 player.sendMessage("§c저런! [${session.getRole(player)}]이 없어 아무것도 하지 못합니다!")
@@ -206,9 +223,15 @@ class HyperX: JavaPlugin(), Listener {
         val damager = event.damager
         if (damager is Player) {
             val session = findSessionByPlayer(damager) ?: return
+
+            if (session.isPaused) {
+                event.isCancelled = true
+                return
+            }
+
             if (damager == session.leftArmPlayer) {
                 if (!damager.isOnline) {
-                    damager.sendMessage("§c저런! [${session.getRole(damager)}]이 없어 아무것도 하지 못합니다!") // 'player' 대신 'damager' 사용
+                    damager.sendMessage("§c저런! [${session.getRole(damager)}]이 없어 아무것도 하지 못합니다!")
                     event.isCancelled = true
                     return
                 }
@@ -224,6 +247,11 @@ class HyperX: JavaPlugin(), Listener {
         val session = findSessionByPlayer(player) ?: return
 
         if (player == session.legsPlayer) {
+            if (session.isPaused) {
+                event.isCancelled = true
+                return
+            }
+
             if (player.gameMode == GameMode.SPECTATOR) {
                 event.isCancelled = true
                 session.jumpAsMain()
@@ -237,6 +265,13 @@ class HyperX: JavaPlugin(), Listener {
         val session = findSessionByPlayer(player) ?: return
 
         if (player == session.legsPlayer) {
+            if (session.isPaused) {
+                if (event.from.x != event.to.x || event.from.z != event.to.z) {
+                    event.to = event.from
+                }
+                return
+            }
+
             if (!player.isOnline) {
                 player.sendMessage("§c저런! [${session.getRole(player)}]이 없어 아무것도 하지 못합니다!")
                 event.isCancelled = true
@@ -258,11 +293,16 @@ class HyperX: JavaPlugin(), Listener {
         }
     }
 
-
     @EventHandler
     fun onPlayerToggleSneak(event: PlayerToggleSneakEvent) {
         val player = event.player
         val session = findSessionByPlayer(player) ?: return
+
+        if (session.isPaused) {
+            event.isCancelled = true
+            return
+        }
+
         if (player == session.legsPlayer) {
             if (!player.isOnline) {
                 player.sendMessage("§c저런! [${session.getRole(player)}]이 없어 아무것도 하지 못합니다!")
@@ -278,6 +318,12 @@ class HyperX: JavaPlugin(), Listener {
     fun onPlayerToggleSprint(event: PlayerToggleSprintEvent) {
         val player = event.player
         val session = findSessionByPlayer(player) ?: return
+
+        if (session.isPaused) {
+            event.isCancelled = true
+            return
+        }
+
         if (player == session.legsPlayer) {
             if (!player.isOnline) {
                 player.sendMessage("§c저런! [${session.getRole(player)}]이 없어 아무것도 하지 못합니다!")
@@ -315,6 +361,11 @@ class HyperX: JavaPlugin(), Listener {
         val player = event.whoClicked as? Player ?: return
         val session = findSessionByPlayer(player) ?: return
 
+        if (session.isPaused) {
+            event.isCancelled = true
+            return
+        }
+
         if (player == session.headPlayer) {
             if (!player.isOnline) {
                 player.sendMessage("§c저런! [${session.getRole(player)}]이 없어 아무것도 하지 못합니다!")
@@ -344,6 +395,11 @@ class HyperX: JavaPlugin(), Listener {
     fun onInventoryOpen(event: InventoryOpenEvent) {
         val player = event.player as? Player ?: return
         val session = findSessionByPlayer(player) ?: return
+
+        if (session.isPaused) {
+            event.isCancelled = true
+            return
+        }
 
         if (player in session.allControlPlayers) {
             if (!player.isOnline) {
@@ -378,6 +434,12 @@ class HyperX: JavaPlugin(), Listener {
     fun onPlayerDropItem(event: PlayerDropItemEvent) {
         val player = event.player
         val session = findSessionByPlayer(player) ?: return
+
+        if (session.isPaused) {
+            event.isCancelled = true
+            return
+        }
+
         if (player == session.inventoryPlayer) {
             if (!player.isOnline) {
                 player.sendMessage("§c저런! [${session.getRole(player)}]이 없어 아무것도 하지 못합니다!")
@@ -394,6 +456,12 @@ class HyperX: JavaPlugin(), Listener {
         val entity = event.entity
         if (entity is Player) {
             val session = findSessionByPlayer(entity) ?: return
+
+            if (session.isPaused) {
+                event.isCancelled = true
+                return
+            }
+
             if (entity == session.mainPlayer) {
                 if (!entity.isOnline) {
                     entity.sendMessage("§c저런! [${session.getRole(entity)}]이 없어 아무것도 하지 못합니다!")
@@ -404,6 +472,22 @@ class HyperX: JavaPlugin(), Listener {
                 event.item.remove()
             }
             event.isCancelled = true
+        }
+    }
+
+    @EventHandler
+    fun onPlayerRespawn(event: PlayerRespawnEvent) {
+        val player = event.player
+        val session = findSessionByPlayer(player)
+
+        if (session != null && session.isPaused) {
+            Bukkit.getScheduler().runTaskLater(this, Runnable {
+                if (player == session.mainPlayer) {
+                    player.gameMode = GameMode.SURVIVAL
+                } else if (player in session.allControlPlayers) {
+                    player.gameMode = GameMode.SPECTATOR
+                }
+            }, 1L)
         }
     }
 
@@ -428,13 +512,18 @@ class HyperX: JavaPlugin(), Listener {
             if (session != null) {
                 if (entity == session.mainPlayer) {
                     session.syncDamageToAll(event.damage, event.cause.name)
+
+                    Bukkit.getScheduler().runTaskLater(this, Runnable {
+                        session.syncHealthToAllControlPlayers()
+                    }, 1L)
                 } else if (entity in session.allControlPlayers) {
-                    if (!entity.isOnline) { // 추가된 온라인 상태 확인
+                    if (!entity.isOnline) {
                         entity.sendMessage("§c저런! [${session.getRole(entity)}]이 없어 아무것도 하지 못합니다!")
                         event.isCancelled = true
                         return
                     }
                     event.isCancelled = true
+                    session.applyDamageToMain(event.damage, event.cause)
                 }
             }
         }
@@ -445,7 +534,7 @@ class HyperX: JavaPlugin(), Listener {
         val player = event.entity as? Player ?: return
         val session = findSessionByPlayer(player) ?: return
         if (player != session.mainPlayer) {
-            if (!player.isOnline) { // 추가된 온라인 상태 확인
+            if (!player.isOnline) {
                 player.sendMessage("§c저런! [${session.getRole(player)}]이 없어 아무것도 하지 못합니다!")
                 event.isCancelled = true
                 return
@@ -459,7 +548,7 @@ class HyperX: JavaPlugin(), Listener {
         val target = event.target as? Player ?: return
         val session = findSessionByPlayer(target) ?: return
         if (target in session.allControlPlayers) {
-            if (!target.isOnline) { // 추가된 온라인 상태 확인
+            if (!target.isOnline) {
                 target.sendMessage("§c저런! [${session.getRole(target)}]이 없어 아무것도 하지 못합니다!")
                 event.isCancelled = true
                 return
@@ -472,6 +561,11 @@ class HyperX: JavaPlugin(), Listener {
     fun onPlayerInteractEntity(event: PlayerInteractEntityEvent) {
         val player = event.player
         val session = findSessionByPlayer(player) ?: return
+
+        if (session.isPaused) {
+            event.isCancelled = true
+            return
+        }
 
         if (player == session.rightArmPlayer) {
             event.isCancelled = true
@@ -512,7 +606,6 @@ class HyperSession(
     val inventoryPlayer: Player,
     val legsPlayer: Player,
     private val plugin: HyperX
-
 ) {
 
     val allControlPlayers = listOf(headPlayer, rightArmPlayer, leftArmPlayer, inventoryPlayer, legsPlayer)
@@ -521,6 +614,8 @@ class HyperSession(
     private var lastOnGround = false
     private var consumingTaskId: Int = -1
     private var consumingStartTime: Long = 0
+    var isPaused = false
+        private set
 
     private data class PlayerState(val gameMode: GameMode, val location: Location)
 
@@ -531,6 +626,150 @@ class HyperSession(
             originalStates[player.uniqueId] = PlayerState(player.gameMode, player.location)
             player.gameMode = GameMode.SPECTATOR
             player.sendMessage("§a[하이퍼스레딩] 세션에 참가했습니다. 역할: §e${getRole(player)}")
+        }
+    }
+
+    fun updateViewpoints() {
+        if (!mainPlayer.isOnline) {
+            destroy()
+            return
+        }
+
+        if (isPaused) {
+            checkAndResumeSession()
+            return
+        }
+
+        val mainLoc = mainPlayer.location
+        mainPlayer.teleport(mainLoc.apply {
+            yaw = headPlayer.location.yaw
+            pitch = headPlayer.location.pitch
+        })
+
+        val mainPlayerHealth = mainPlayer.health
+        val mainPlayerMaxHealth = mainPlayer.maxHealth
+        val mainPlayerFoodLevel = mainPlayer.foodLevel
+
+        allControlPlayers.forEach { player ->
+            if (player.isOnline) {
+                val targetLoc = when (player) {
+                    headPlayer -> mainLoc.clone().add(0.0, mainPlayer.eyeHeight, 0.0)
+                    rightArmPlayer -> getShoulderLocation(mainLoc, 0.5)
+                    leftArmPlayer -> getShoulderLocation(mainLoc, -0.5)
+                    inventoryPlayer -> mainLoc.clone().add(mainLoc.direction.multiply(-2.0)).add(0.0, 1.0, 0.0)
+                    legsPlayer -> mainLoc.clone()
+                    else -> mainLoc
+                }
+                player.teleport(targetLoc.apply { yaw = mainLoc.yaw; pitch = mainLoc.pitch })
+
+                player.health = mainPlayerHealth.coerceAtMost(player.maxHealth)
+
+                val healthBar = "§c체력: ${"%.1f".format(mainPlayerHealth)}/${mainPlayerMaxHealth}"
+                val foodBar = "§6배고픔: ${mainPlayerFoodLevel}/20"
+                player.sendActionBar("§l$healthBar   $foodBar")
+            }
+        }
+        syncHotbar()
+    }
+
+    private fun checkAndResumeSession() {
+        val allAlive = (allControlPlayers + mainPlayer).all {
+            it.isOnline && !it.isDead && it.health > 0
+        }
+
+        if (allAlive) {
+            resumeSession()
+        } else {
+            val deadPlayers = (allControlPlayers + mainPlayer).filter {
+                !it.isOnline || it.isDead || it.health <= 0
+            }
+
+            (allControlPlayers + mainPlayer).forEach { player ->
+                if (player.isOnline) {
+                    val deadList = deadPlayers.joinToString(", ") {
+                        if (it == mainPlayer) "${it.name}(메인)"
+                        else "${it.name}(${getRole(it)})"
+                    }
+                    player.sendActionBar("§e[대기 중] 부활 대기: $deadList")
+                }
+            }
+        }
+    }
+
+    private fun resumeSession() {
+        isPaused = false
+
+        allControlPlayers.forEach { player ->
+            if (player.isOnline) {
+                player.gameMode = GameMode.SPECTATOR
+            }
+        }
+
+        if (mainPlayer.isOnline) {
+            mainPlayer.gameMode = GameMode.SURVIVAL
+        }
+
+        syncHealthToAllControlPlayers()
+
+        (allControlPlayers + mainPlayer).forEach { player ->
+            if (player.isOnline) {
+                player.sendMessage("§a[하이퍼스레딩] 세션이 재개되었습니다!")
+            }
+        }
+    }
+
+    private fun pauseSession() {
+        isPaused = true
+        cancelConsuming()
+
+        (allControlPlayers + mainPlayer).forEach { player ->
+            if (player.isOnline) {
+                player.sendMessage("§c[하이퍼스레딩] 세션이 일시정지되었습니다. 모든 플레이어가 부활할 때까지 대기 중...")
+            }
+        }
+    }
+
+    private fun getShoulderLocation(loc: Location, offset: Double): Location {
+        val rightDir = loc.direction.clone().crossProduct(Vector(0, 1, 0)).normalize().multiply(offset)
+        return loc.clone().add(rightDir).add(0.0, mainPlayer.eyeHeight - 0.4, 0.0)
+    }
+
+    private fun syncHotbar() {
+        for (i in 0..8) {
+            headPlayer.inventory.setItem(i, mainPlayer.inventory.getItem(i)?.clone())
+        }
+        headPlayer.updateInventory()
+    }
+
+    fun syncActionToAll(message: String) {
+        (allControlPlayers + mainPlayer).forEach { it.sendActionBar("§e$message") }
+    }
+
+    fun syncDamageToAll(damage: Double, cause: String) {
+        syncActionToAll("§c[경고] 데미지: ${String.format("%.1f", damage)} ($cause)")
+    }
+
+    fun syncHealthToAllControlPlayers() {
+        val mainHealth = mainPlayer.health
+        allControlPlayers.forEach { player ->
+            if (player.isOnline) {
+                player.health = mainHealth.coerceAtMost(player.maxHealth)
+            }
+        }
+    }
+
+    fun applyDamageToMain(damage: Double, cause: org.bukkit.event.entity.EntityDamageEvent.DamageCause) {
+        val newHealth = (mainPlayer.health - damage).coerceAtLeast(0.0)
+        mainPlayer.health = newHealth
+
+        syncActionToAll("§c[경고] 데미지: ${String.format("%.1f", damage)} (${cause.name})")
+
+        Bukkit.getScheduler().runTaskLater(plugin, Runnable {
+            syncHealthToAllControlPlayers()
+        }, 1L)
+
+        if (newHealth <= 0.0) {
+            pauseSession()
         }
     }
 
@@ -548,15 +787,12 @@ class HyperSession(
         return result
     }
 
-    // 먹기/마시기 시작
     fun startConsuming(item: ItemStack) {
-        // 이미 먹고 있다면 무시
         if (consumingTaskId != -1) return
 
         consumingStartTime = System.currentTimeMillis()
         syncActionToAll("[오른팔] ${item.type} 먹는 중...")
 
-        // 소비 시간 (일반적으로 32틱 = 1.6초)
         val consumeTicks = when {
             item.type.name.contains("POTION") -> 32L
             item.type == org.bukkit.Material.MILK_BUCKET -> 32L
@@ -671,61 +907,6 @@ class HyperSession(
         mainPlayer.sendMessage("§c[하이퍼스레딩] 세션이 종료되었습니다.")
     }
 
-    fun updateViewpoints() {
-        if (!mainPlayer.isOnline) {
-            destroy()
-            return
-        }
-
-        val mainLoc = mainPlayer.location
-        mainPlayer.teleport(mainLoc.apply {
-            yaw = headPlayer.location.yaw
-            pitch = headPlayer.location.pitch
-        })
-
-        val mainPlayerHealth = mainPlayer.health
-        val mainPlayerMaxHealth = mainPlayer.maxHealth
-        val mainPlayerFoodLevel = mainPlayer.foodLevel
-
-        allControlPlayers.forEach { player ->
-            if (player.isOnline) {
-                val targetLoc = when (player) {
-                    headPlayer -> mainLoc.clone().add(0.0, mainPlayer.eyeHeight, 0.0)
-                    rightArmPlayer -> getShoulderLocation(mainLoc, 0.5)
-                    leftArmPlayer -> getShoulderLocation(mainLoc, -0.5)
-                    inventoryPlayer -> mainLoc.clone().add(mainLoc.direction.multiply(-2.0)).add(0.0, 1.0, 0.0)
-                    legsPlayer -> mainLoc.clone()
-                    else -> mainLoc
-                }
-                player.teleport(targetLoc.apply { yaw = mainLoc.yaw; pitch = mainLoc.pitch })
-
-                val healthBar = "§c체력: ${"%.1f".format(mainPlayerHealth)}/${mainPlayerMaxHealth}"
-                val foodBar = "§6배고픔: ${mainPlayerFoodLevel}/20"
-                player.sendActionBar("§l$healthBar   $foodBar")
-            }
-        }
-        syncHotbar()
-    }
-
-
-
-    private fun getShoulderLocation(loc: Location, offset: Double): Location {
-        val rightDir = loc.direction.clone().crossProduct(Vector(0, 1, 0)).normalize().multiply(offset)
-        return loc.clone().add(rightDir).add(0.0, mainPlayer.eyeHeight - 0.4, 0.0)
-    }
-
-    private fun syncHotbar() {
-        for (i in 0..8) {
-            headPlayer.inventory.setItem(i, mainPlayer.inventory.getItem(i)?.clone())
-        }
-        headPlayer.updateInventory()
-    }
-
-    fun syncActionToAll(message: String) {
-        (allControlPlayers + mainPlayer).forEach { it.sendActionBar("§e$message") }
-    }
-
-    // Action Handlers
     fun handleRightArmAction(event: PlayerInteractEvent) {
         val fakeEvent = PlayerInteractEvent(mainPlayer, event.action, event.item, event.clickedBlock, event.blockFace, event.hand)
         Bukkit.getPluginManager().callEvent(fakeEvent)
@@ -876,10 +1057,6 @@ class HyperSession(
         syncInventoryToOthers(mainPlayer.inventory)
     }
 
-    fun syncDamageToAll(damage: Double, cause: String) {
-        syncActionToAll("§c[경고] 데미지: ${String.format("%.1f", damage)} ($cause)")
-    }
-
     fun getRole(player: Player): String = when (player) {
         headPlayer -> "머리"
         rightArmPlayer -> "오른팔"
@@ -889,4 +1066,3 @@ class HyperSession(
         else -> "알 수 없음"
     }
 }
-
