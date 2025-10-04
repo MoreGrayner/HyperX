@@ -12,7 +12,7 @@
   * 인자로 6명의 플레이어 이름을 받습니다.
 
 * ### 역할
-  * MainPlayer - (역할 아님) 세션의 중심 플레이어
+  * MainPlayer - (역할 아님) 세션의 중심 플레이어- 가급적 머리 플레이어와 통일할 것을 권장드립니다.
   * HeadPlayer - 시선 전환 및 핫바 슬롯 변경
   * RightArmPlayer - 우클릭 액션
   * LeftArmPlayer - 좌클릭 액션
