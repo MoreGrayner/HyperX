@@ -127,6 +127,15 @@ class HyperX: JavaPlugin(), Listener {
         return playerToSession[player.uniqueId]
     }
 
+    @EventHandler
+    fun onPlayerItemConsume(event: PlayerItemConsumeEvent) {
+        val player = event.player
+        val session = findSessionByPlayer(player) ?: return
+
+        if (player in session.allControlPlayers) {
+            event.isCancelled = true
+        }
+    }
 
     @EventHandler(priority = EventPriority.HIGHEST)
     fun onPlayerInteract(event: PlayerInteractEvent) {
@@ -144,7 +153,14 @@ class HyperX: JavaPlugin(), Listener {
         when (player) {
             session.rightArmPlayer -> {
                 if (event.action == Action.RIGHT_CLICK_AIR || event.action == Action.RIGHT_CLICK_BLOCK) {
-                    session.handleRightArmAction(event)
+                    val item = session.mainPlayer.inventory.itemInMainHand
+
+                    // 먹을 수 있거나 마실 수 있는 아이템인지 확인
+                    if (isConsumable(item)) {
+                        session.startConsuming(item)
+                    } else {
+                        session.handleRightArmAction(event)
+                    }
                 }
             }
             session.leftArmPlayer -> {
@@ -203,6 +219,19 @@ class HyperX: JavaPlugin(), Listener {
     }
 
     @EventHandler
+    fun onPlayerToggleFlight(event: PlayerToggleFlightEvent) {
+        val player = event.player
+        val session = findSessionByPlayer(player) ?: return
+
+        if (player == session.legsPlayer) {
+            if (player.gameMode == GameMode.SPECTATOR) {
+                event.isCancelled = true
+                session.jumpAsMain()
+            }
+        }
+    }
+
+    @EventHandler
     fun onPlayerMove(event: PlayerMoveEvent) {
         val player = event.player
         val session = findSessionByPlayer(player) ?: return
@@ -213,6 +242,14 @@ class HyperX: JavaPlugin(), Listener {
                 event.isCancelled = true
                 return
             }
+
+            val from = event.from
+            val to = event.to
+
+            if (to.y > from.y && session.wasOnGround()) {
+                session.jumpAsMain()
+            }
+
             session.handleLegsMovement(event)
         } else if (player != session.mainPlayer) {
             if (event.from.x != event.to.x || event.from.z != event.to.z) {
@@ -220,6 +257,7 @@ class HyperX: JavaPlugin(), Listener {
             }
         }
     }
+
 
     @EventHandler
     fun onPlayerToggleSneak(event: PlayerToggleSneakEvent) {
@@ -429,6 +467,41 @@ class HyperX: JavaPlugin(), Listener {
             event.target = session.mainPlayer
         }
     }
+
+    @EventHandler
+    fun onPlayerInteractEntity(event: PlayerInteractEntityEvent) {
+        val player = event.player
+        val session = findSessionByPlayer(player) ?: return
+
+        if (player == session.rightArmPlayer) {
+            event.isCancelled = true
+            session.interactWithEntity(event.rightClicked)
+        }
+    }
+
+    @EventHandler
+    fun onPlayerSwapHandItems(event: PlayerSwapHandItemsEvent) {
+        val player = event.player
+        val session = findSessionByPlayer(player) ?: return
+
+        if (player in session.allControlPlayers) {
+            event.isCancelled = true
+
+            if (player == session.rightArmPlayer) {
+                session.cancelConsuming()
+            }
+        }
+    }
+}
+
+private fun isConsumable(item: ItemStack?): Boolean {
+    if (item == null || item.type.isAir) return false
+
+    val material = item.type
+    return material.isEdible ||
+            material == org.bukkit.Material.POTION ||
+            material == org.bukkit.Material.MILK_BUCKET ||
+            material.name.contains("POTION")
 }
 
 class HyperSession(
@@ -439,10 +512,15 @@ class HyperSession(
     val inventoryPlayer: Player,
     val legsPlayer: Player,
     private val plugin: HyperX
+
 ) {
 
     val allControlPlayers = listOf(headPlayer, rightArmPlayer, leftArmPlayer, inventoryPlayer, legsPlayer)
     private val originalStates = mutableMapOf<UUID, PlayerState>()
+
+    private var lastOnGround = false
+    private var consumingTaskId: Int = -1
+    private var consumingStartTime: Long = 0
 
     private data class PlayerState(val gameMode: GameMode, val location: Location)
 
@@ -456,7 +534,129 @@ class HyperSession(
         }
     }
 
+    fun jumpAsMain() {
+        if (mainPlayer.isOnGround || mainPlayer.location.block.type == org.bukkit.Material.WATER) {
+            mainPlayer.velocity = mainPlayer.velocity.setY(0.42)
+            syncActionToAll("[다리] 점프")
+        }
+    }
+
+    fun wasOnGround(): Boolean {
+        val current = mainPlayer.isOnGround
+        val result = lastOnGround
+        lastOnGround = current
+        return result
+    }
+
+    // 먹기/마시기 시작
+    fun startConsuming(item: ItemStack) {
+        // 이미 먹고 있다면 무시
+        if (consumingTaskId != -1) return
+
+        consumingStartTime = System.currentTimeMillis()
+        syncActionToAll("[오른팔] ${item.type} 먹는 중...")
+
+        // 소비 시간 (일반적으로 32틱 = 1.6초)
+        val consumeTicks = when {
+            item.type.name.contains("POTION") -> 32L
+            item.type == org.bukkit.Material.MILK_BUCKET -> 32L
+            item.type.isEdible -> 32L
+            else -> 32L
+        }
+
+        consumingTaskId = Bukkit.getScheduler().runTaskLater(plugin, Runnable {
+            finishConsuming(item)
+        }, consumeTicks).taskId
+    }
+
+    private fun finishConsuming(item: ItemStack) {
+        consumingTaskId = -1
+
+        val itemInHand = mainPlayer.inventory.itemInMainHand
+        if (itemInHand.isSimilar(item)) {
+            when {
+                item.type.isEdible -> {
+                    val food = item.type
+                    val restoreAmount = getFoodRestoration(food)
+                    val saturation = getFoodSaturation(food)
+
+                    mainPlayer.foodLevel = (mainPlayer.foodLevel + restoreAmount).coerceAtMost(20)
+                    mainPlayer.saturation = (mainPlayer.saturation + saturation).coerceAtMost(20f)
+
+                    syncActionToAll("§a[오른팔] ${item.type} 먹음 (배고픔 +${restoreAmount})")
+                }
+                item.type.name.contains("POTION") -> {
+                    syncActionToAll("§a[오른팔] 포션 마심")
+                }
+                item.type == org.bukkit.Material.MILK_BUCKET -> {
+                    mainPlayer.activePotionEffects.forEach { mainPlayer.removePotionEffect(it.type) }
+                    syncActionToAll("§a[오른팔] 우유 마심 (효과 제거)")
+                }
+            }
+
+            if (itemInHand.amount > 1) {
+                itemInHand.amount -= 1
+            } else {
+                mainPlayer.inventory.setItemInMainHand(null)
+            }
+
+            when (item.type) {
+                org.bukkit.Material.POTION -> {
+                    mainPlayer.inventory.addItem(ItemStack(org.bukkit.Material.GLASS_BOTTLE))
+                }
+                org.bukkit.Material.MILK_BUCKET -> {
+                    mainPlayer.inventory.addItem(ItemStack(org.bukkit.Material.BUCKET))
+                }
+                else -> {}
+            }
+
+            mainPlayer.updateInventory()
+            syncHotbar()
+        }
+    }
+
+    fun cancelConsuming() {
+        if (consumingTaskId != -1) {
+            Bukkit.getScheduler().cancelTask(consumingTaskId)
+            consumingTaskId = -1
+            syncActionToAll("§c[오른팔] 먹기/마시기 취소")
+        }
+    }
+
+    fun interactWithEntity(entity: Entity) {
+        syncActionToAll("[오른팔] ${entity.type}와 상호작용")
+    }
+
+    private fun getFoodRestoration(food: org.bukkit.Material): Int {
+        return when (food) {
+            org.bukkit.Material.APPLE -> 4
+            org.bukkit.Material.GOLDEN_APPLE -> 4
+            org.bukkit.Material.BREAD -> 5
+            org.bukkit.Material.COOKED_BEEF, org.bukkit.Material.COOKED_PORKCHOP -> 8
+            org.bukkit.Material.COOKED_CHICKEN, org.bukkit.Material.COOKED_MUTTON -> 6
+            org.bukkit.Material.COOKED_COD, org.bukkit.Material.COOKED_SALMON -> 6
+            org.bukkit.Material.BAKED_POTATO -> 5
+            org.bukkit.Material.COOKIE -> 2
+            org.bukkit.Material.MELON_SLICE -> 2
+            org.bukkit.Material.CARROT, org.bukkit.Material.POTATO -> 1
+            org.bukkit.Material.BEETROOT -> 1
+            org.bukkit.Material.CHORUS_FRUIT -> 4
+            else -> 2
+        }
+    }
+
+    private fun getFoodSaturation(food: org.bukkit.Material): Float {
+        return when (food) {
+            org.bukkit.Material.GOLDEN_APPLE -> 9.6f
+            org.bukkit.Material.COOKED_BEEF, org.bukkit.Material.COOKED_PORKCHOP -> 12.8f
+            org.bukkit.Material.COOKED_SALMON -> 9.6f
+            org.bukkit.Material.BREAD -> 6.0f
+            else -> 1.2f
+        }
+    }
+
     fun destroy() {
+        cancelConsuming()
         allControlPlayers.forEach { player ->
             originalStates[player.uniqueId]?.let { state ->
                 if (player.isOnline) {
@@ -569,7 +769,7 @@ class HyperSession(
     }
 
     fun handleLegsMovement(event: PlayerMoveEvent) {
-        val movement = event.to!!.toVector().subtract(event.from.toVector())
+        val movement = event.to.toVector().subtract(event.from.toVector())
         if (movement.lengthSquared() > 0) {
             mainPlayer.velocity = mainPlayer.velocity.add(movement)
         }
