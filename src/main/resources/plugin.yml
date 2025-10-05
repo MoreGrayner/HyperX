@@ -4,6 +4,14 @@ main: io.github.moregrayner.miniame.hyperX.HyperX
 api-version: '1.21'
 authors: [ 짱레인 ]
 description: 윈터오브짱레인
+softdepend: [ProtocolLib]
+
 commands:
   hyperthread:
-    usage: /hyperthread start
+    usage: /hyperthread start 이러면 되나?
+    permission: hyperx.use
+
+permissions:
+  hyperx.use:
+    description: 하이퍼스레딩 명령어 사용 권한
+    default: op

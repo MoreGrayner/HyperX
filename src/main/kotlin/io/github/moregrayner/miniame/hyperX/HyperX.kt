@@ -1,5 +1,7 @@
 package io.github.moregrayner.miniame.hyperX
 
+import com.comphenix.protocol.PacketType
+import com.comphenix.protocol.ProtocolLibrary
 import net.md_5.bungee.api.ChatColor
 import org.bukkit.Bukkit
 import org.bukkit.GameMode
@@ -26,6 +28,7 @@ import org.bukkit.inventory.ItemStack
 import org.bukkit.plugin.java.JavaPlugin
 import org.bukkit.scheduler.BukkitRunnable
 import org.bukkit.util.Vector
+import java.io.File
 import java.util.*
 
 class HyperX: JavaPlugin(), Listener {
@@ -34,6 +37,12 @@ class HyperX: JavaPlugin(), Listener {
     val playerToSession = mutableMapOf<UUID, HyperSession>()
 
     override fun onEnable() {
+        if (!checkAndLoadProtocolLib()) {
+            logger.severe("ProtocolLib 로드에 실패했습니다! 플러그인을 비활성화합니다.")
+            Bukkit.getPluginManager().disablePlugin(this)
+            return
+        }
+
         server.pluginManager.registerEvents(this, this)
 
         object : BukkitRunnable() {
@@ -41,6 +50,68 @@ class HyperX: JavaPlugin(), Listener {
                 sessions.values.forEach { it.updateViewpoints() }
             }
         }.runTaskTimer(this, 0L, 1L)
+    }
+
+    private fun checkAndLoadProtocolLib(): Boolean {
+        if (Bukkit.getPluginManager().isPluginEnabled("ProtocolLib")) {
+            logger.info("ProtocolLib이 이미 로드되어 있습니다.")
+            return true
+        }
+
+        logger.warning("ProtocolLib를 찾을 수 없습니다. 자동 다운로드를 시도합니다...")
+
+        return try {
+            val pluginFolder = File(dataFolder.parent)
+            val protocolLibFile = File(pluginFolder, "ProtocolLib.jar")
+
+            if (!protocolLibFile.exists()) {
+                logger.info("ProtocolLib 다운로드 중...")
+                downloadProtocolLib(protocolLibFile)
+            }
+
+            logger.info("ProtocolLib 로딩 중...")
+            loadPlugin(protocolLibFile)
+
+            val protocolLib = Bukkit.getPluginManager().getPlugin("ProtocolLib")
+            if (protocolLib != null && protocolLib.isEnabled) {
+                logger.info("ProtocolLib이 성공적으로 로드되었습니다!")
+                true
+            } else {
+                logger.severe("ProtocolLib이 로드는 되었지만 활성화에 실패했습니다.")
+                false
+            }
+        } catch (e: Exception) {
+            logger.severe("ProtocolLib 자동 로드 실패: ${e.message}")
+            e.printStackTrace()
+            false
+        }
+    }
+
+    private fun downloadProtocolLib(destination: File) {
+        val url = java.net.URL("https://github.com/dmulloy2/ProtocolLib/releases/download/5.1.0/ProtocolLib.jar")
+        url.openStream().use { input ->
+            java.io.FileOutputStream(destination).use { output ->
+                input.copyTo(output)
+            }
+        }
+        logger.info("ProtocolLib 다운로드 완료: ${destination.name}")
+    }
+
+    private fun loadPlugin(file: File) {
+        try {
+            val pluginManager = Bukkit.getPluginManager()
+
+            val loadPluginMethod = pluginManager.javaClass.getDeclaredMethod("loadPlugin", File::class.java)
+            loadPluginMethod.isAccessible = true
+            val plugin = loadPluginMethod.invoke(pluginManager, file) as org.bukkit.plugin.Plugin
+
+            plugin.onLoad()
+            pluginManager.enablePlugin(plugin)
+
+            logger.info("ProtocolLib 플러그인 로드 완료")
+        } catch (e: Exception) {
+            throw RuntimeException("플러그인 로드 실패", e)
+        }
     }
 
     override fun onDisable() {
@@ -100,7 +171,7 @@ class HyperX: JavaPlugin(), Listener {
                 }
 
                 sessions[mainPlayer.uniqueId]?.destroy()
-                sender.sendMessage("§a${mainPlayer.name}의 하이퍼스레딩 세션이 종료되었습니다.")
+                sender.sendMessage("§a${mainPlayer.name}의 HyperX 세션이 종료되었습니다.")
                 return true
             }
         }
@@ -164,12 +235,14 @@ class HyperX: JavaPlugin(), Listener {
                     if (isConsumable(item)) {
                         session.startConsuming(item)
                     } else {
+                        session.sendArmAnimation(true)
                         session.handleRightArmAction(event)
                     }
                 }
             }
             session.leftArmPlayer -> {
                 if (event.action == Action.LEFT_CLICK_AIR || event.action == Action.LEFT_CLICK_BLOCK) {
+                    session.sendArmAnimation(false)
                     session.handleLeftArmAction(event)
                 }
             }
@@ -192,6 +265,7 @@ class HyperX: JavaPlugin(), Listener {
                 event.isCancelled = true
                 return
             }
+            session.sendArmAnimation(false)
             session.breakBlockAsMain(event)
         }
         if (player in session.allControlPlayers) event.isCancelled = true
@@ -213,6 +287,7 @@ class HyperX: JavaPlugin(), Listener {
                 event.isCancelled = true
                 return
             }
+            session.sendArmAnimation(true)
             session.placeBlockAsMain(event)
         }
         if (player in session.allControlPlayers) event.isCancelled = true
@@ -235,6 +310,7 @@ class HyperX: JavaPlugin(), Listener {
                     event.isCancelled = true
                     return
                 }
+                session.sendArmAnimation(false)
                 session.attackEntityAsMain(event.entity, event.damage)
             }
             if (damager in session.allControlPlayers) event.isCancelled = true
@@ -511,7 +587,7 @@ class HyperX: JavaPlugin(), Listener {
             val session = findSessionByPlayer(entity)
             if (session != null) {
                 if (entity == session.mainPlayer) {
-                    session.syncDamageToAll(event.damage, event.cause.name)
+                    session.syncDamageToAll(event.damage)
 
                     Bukkit.getScheduler().runTaskLater(this, Runnable {
                         session.syncHealthToAllControlPlayers()
@@ -523,7 +599,7 @@ class HyperX: JavaPlugin(), Listener {
                         return
                     }
                     event.isCancelled = true
-                    session.applyDamageToMain(event.damage, event.cause)
+                    session.applyDamageToMain(event.damage)
                 }
             }
         }
@@ -569,6 +645,7 @@ class HyperX: JavaPlugin(), Listener {
 
         if (player == session.rightArmPlayer) {
             event.isCancelled = true
+            session.sendArmAnimation(true)
             session.interactWithEntity(event.rightClicked)
         }
     }
@@ -617,6 +694,12 @@ class HyperSession(
     var isPaused = false
         private set
 
+    private var consumingItem: ItemStack? = null
+    private var consumingProgressTaskId: Int = -1
+    private var lastPlayerLocation: Location? = null
+
+    private val protocolManager = ProtocolLibrary.getProtocolManager()
+
     private data class PlayerState(val gameMode: GameMode, val location: Location)
 
     fun initialize() {
@@ -625,7 +708,7 @@ class HyperSession(
         allControlPlayers.forEach { player ->
             originalStates[player.uniqueId] = PlayerState(player.gameMode, player.location)
             player.gameMode = GameMode.SPECTATOR
-            player.sendMessage("§a[하이퍼스레딩] 세션에 참가했습니다. 역할: §e${getRole(player)}")
+            player.sendMessage("§a[HyperX] 세션에 참가했습니다. 역할: §e${getRole(player)}")
         }
     }
 
@@ -646,10 +729,6 @@ class HyperSession(
             pitch = headPlayer.location.pitch
         })
 
-        val mainPlayerHealth = mainPlayer.health
-        val mainPlayerMaxHealth = mainPlayer.maxHealth
-        val mainPlayerFoodLevel = mainPlayer.foodLevel
-
         allControlPlayers.forEach { player ->
             if (player.isOnline) {
                 val targetLoc = when (player) {
@@ -662,14 +741,56 @@ class HyperSession(
                 }
                 player.teleport(targetLoc.apply { yaw = mainLoc.yaw; pitch = mainLoc.pitch })
 
-                player.health = mainPlayerHealth.coerceAtMost(player.maxHealth)
+                sendUIPackets(player)
 
-                val healthBar = "§c체력: ${"%.1f".format(mainPlayerHealth)}/${mainPlayerMaxHealth}"
-                val foodBar = "§6배고픔: ${mainPlayerFoodLevel}/20"
-                player.sendActionBar("§l$healthBar   $foodBar")
+                syncHotbarToPlayer(player)
             }
         }
-        syncHotbar()
+    }
+
+    private fun sendUIPackets(player: Player) {
+        try {
+            // 체력 패킷
+            val healthPacket = protocolManager.createPacket(PacketType.Play.Server.UPDATE_HEALTH)
+            healthPacket.float.write(0, mainPlayer.health.toFloat())
+            healthPacket.integers.write(0, mainPlayer.foodLevel)
+            healthPacket.float.write(1, mainPlayer.saturation)
+            protocolManager.sendServerPacket(player, healthPacket)
+
+            // 경험치 패킷
+            val expPacket = protocolManager.createPacket(PacketType.Play.Server.EXPERIENCE)
+            expPacket.float.write(0, mainPlayer.exp)
+            expPacket.integers.write(0, mainPlayer.level)
+            expPacket.integers.write(1, mainPlayer.totalExperience)
+            protocolManager.sendServerPacket(player, expPacket)
+
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun sendArmAnimation(isRightArm: Boolean) {
+        try {
+            val animationPacket = protocolManager.createPacket(PacketType.Play.Server.ANIMATION)
+            animationPacket.integers.write(0, mainPlayer.entityId)
+
+            val animationType = if (isRightArm) 0 else 3
+            animationPacket.integers.write(1, animationType)
+
+            mainPlayer.world.players.forEach { viewer ->
+                if (viewer.location.distance(mainPlayer.location) < 64) {
+                    protocolManager.sendServerPacket(viewer, animationPacket)
+                }
+            }
+
+            if (isRightArm) {
+                mainPlayer.swingMainHand()
+            } else {
+                mainPlayer.swingOffHand()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     private fun checkAndResumeSession() {
@@ -713,7 +834,7 @@ class HyperSession(
 
         (allControlPlayers + mainPlayer).forEach { player ->
             if (player.isOnline) {
-                player.sendMessage("§a[하이퍼스레딩] 세션이 재개되었습니다!")
+                player.sendMessage("§a[HyperX] 세션이 재개되었습니다.")
             }
         }
     }
@@ -724,7 +845,7 @@ class HyperSession(
 
         (allControlPlayers + mainPlayer).forEach { player ->
             if (player.isOnline) {
-                player.sendMessage("§c[하이퍼스레딩] 세션이 일시정지되었습니다. 모든 플레이어가 부활할 때까지 대기 중...")
+                player.sendMessage("§c[HyperX] 세션이 일시정지되었습니다. 모든 플레이어가 부활할 때까지 대기 중...")
             }
         }
     }
@@ -741,12 +862,30 @@ class HyperSession(
         headPlayer.updateInventory()
     }
 
-    fun syncActionToAll(message: String) {
-        (allControlPlayers + mainPlayer).forEach { it.sendActionBar("§e$message") }
+    private fun syncHotbarToPlayer(player: Player) {
+        if (player == headPlayer) {
+            for (i in 0..8) {
+                player.inventory.setItem(i, mainPlayer.inventory.getItem(i)?.clone())
+            }
+        } else {
+            for (i in 0..8) {
+                val item = mainPlayer.inventory.getItem(i)?.clone()
+                if (item != null) {
+                    item.itemMeta = item.itemMeta?.apply {
+                        val currentLore = lore ?: mutableListOf()
+                        if (!currentLore.contains("§8[보기 전용]")) {
+                            lore = currentLore + "§8[보기 전용]"
+                        }
+                    }
+                }
+                player.inventory.setItem(i, item)
+            }
+        }
+        player.updateInventory()
     }
 
-    fun syncDamageToAll(damage: Double, cause: String) {
-        syncActionToAll("§c[경고] 데미지: ${String.format("%.1f", damage)} ($cause)")
+    fun syncActionToAll(message: String) {
+        (allControlPlayers + mainPlayer).forEach { it.sendActionBar("§e$message") }
     }
 
     fun syncHealthToAllControlPlayers() {
@@ -758,11 +897,9 @@ class HyperSession(
         }
     }
 
-    fun applyDamageToMain(damage: Double, cause: org.bukkit.event.entity.EntityDamageEvent.DamageCause) {
+    fun applyDamageToMain(damage: Double) {
         val newHealth = (mainPlayer.health - damage).coerceAtLeast(0.0)
         mainPlayer.health = newHealth
-
-        syncActionToAll("§c[경고] 데미지: ${String.format("%.1f", damage)} (${cause.name})")
 
         Bukkit.getScheduler().runTaskLater(plugin, Runnable {
             syncHealthToAllControlPlayers()
@@ -776,7 +913,6 @@ class HyperSession(
     fun jumpAsMain() {
         if (mainPlayer.isOnGround || mainPlayer.location.block.type == org.bukkit.Material.WATER) {
             mainPlayer.velocity = mainPlayer.velocity.setY(0.42)
-            syncActionToAll("[다리] 점프")
         }
     }
 
@@ -790,64 +926,236 @@ class HyperSession(
     fun startConsuming(item: ItemStack) {
         if (consumingTaskId != -1) return
 
+        consumingItem = item.clone()
         consumingStartTime = System.currentTimeMillis()
-        syncActionToAll("[오른팔] ${item.type} 먹는 중...")
+        lastPlayerLocation = mainPlayer.location.clone()
 
-        val consumeTicks = when {
-            item.type.name.contains("POTION") -> 32L
-            item.type == org.bukkit.Material.MILK_BUCKET -> 32L
-            item.type.isEdible -> 32L
-            else -> 32L
-        }
+        val consumeTicks = getConsumeDuration(item)
+
+        consumingProgressTaskId = Bukkit.getScheduler().runTaskTimer(plugin, Runnable {
+            if (shouldCancelConsuming()) {
+                cancelConsuming()
+            } else {
+                lastPlayerLocation = mainPlayer.location.clone()
+            }
+        }, 0L, 2L).taskId
 
         consumingTaskId = Bukkit.getScheduler().runTaskLater(plugin, Runnable {
             finishConsuming(item)
         }, consumeTicks).taskId
     }
 
+    private fun getConsumeDuration(item: ItemStack): Long {
+        return when {
+            item.type == org.bukkit.Material.DRIED_KELP -> 16L
+
+            item.type == org.bukkit.Material.POTION -> 25L
+
+            item.type.name.contains("POTION") -> 25L
+
+            item.type == org.bukkit.Material.MILK_BUCKET -> 32L
+
+            item.type == org.bukkit.Material.SUSPICIOUS_STEW -> 34L
+
+            item.type == org.bukkit.Material.HONEY_BOTTLE -> 25L
+
+            item.type.isEdible -> 32L
+
+            else -> 32L
+        }
+    }
+
+    private fun shouldCancelConsuming(): Boolean {
+        if (!mainPlayer.isOnline) return true
+
+        val currentItem = mainPlayer.inventory.itemInMainHand
+        if (!currentItem.isSimilar(consumingItem)) return true
+
+        lastPlayerLocation?.let { lastLoc ->
+            val currentLoc = mainPlayer.location
+            val distance = lastLoc.distance(currentLoc)
+            if (distance > 0.1) return true
+        }
+
+        return false
+    }
+
     private fun finishConsuming(item: ItemStack) {
+        Bukkit.getScheduler().cancelTask(consumingProgressTaskId)
         consumingTaskId = -1
+        consumingProgressTaskId = -1
 
         val itemInHand = mainPlayer.inventory.itemInMainHand
-        if (itemInHand.isSimilar(item)) {
-            when {
-                item.type.isEdible -> {
-                    val food = item.type
-                    val restoreAmount = getFoodRestoration(food)
-                    val saturation = getFoodSaturation(food)
+        if (!itemInHand.isSimilar(item)) {
+            consumingItem = null
+            return
+        }
 
-                    mainPlayer.foodLevel = (mainPlayer.foodLevel + restoreAmount).coerceAtMost(20)
-                    mainPlayer.saturation = (mainPlayer.saturation + saturation).coerceAtMost(20f)
+        when {
+            item.type.isEdible -> applyFoodEffects(item)
+            item.type == org.bukkit.Material.POTION -> applyPotionEffects(item)
+            item.type == org.bukkit.Material.MILK_BUCKET -> mainPlayer.activePotionEffects.forEach {
+                mainPlayer.removePotionEffect(it.type)
+            }
+            item.type == org.bukkit.Material.HONEY_BOTTLE -> {
+                mainPlayer.removePotionEffect(org.bukkit.potion.PotionEffectType.POISON)
+            }
+        }
 
-                    syncActionToAll("§a[오른팔] ${item.type} 먹음 (배고픔 +${restoreAmount})")
+        if (itemInHand.amount > 1) {
+            itemInHand.amount -= 1
+        } else {
+            mainPlayer.inventory.setItemInMainHand(null)
+        }
+
+        when (item.type) {
+            org.bukkit.Material.POTION, org.bukkit.Material.HONEY_BOTTLE -> {
+                mainPlayer.inventory.addItem(ItemStack(org.bukkit.Material.GLASS_BOTTLE))
+            }
+            org.bukkit.Material.MILK_BUCKET -> {
+                mainPlayer.inventory.addItem(ItemStack(org.bukkit.Material.BUCKET))
+            }
+            org.bukkit.Material.MUSHROOM_STEW, org.bukkit.Material.RABBIT_STEW,
+            org.bukkit.Material.BEETROOT_SOUP, org.bukkit.Material.SUSPICIOUS_STEW -> {
+                mainPlayer.inventory.addItem(ItemStack(org.bukkit.Material.BOWL))
+            }
+            else -> {}
+        }
+
+        mainPlayer.updateInventory()
+        syncHotbar()
+        consumingItem = null
+
+        syncActionToAll("§a먹기 완료: ${item.type.name}")
+    }
+
+    private fun applyFoodEffects(item: ItemStack) {
+        val food = item.type
+        val restoreAmount = getFoodRestoration(food)
+        val saturation = getFoodSaturation(food)
+
+        mainPlayer.foodLevel = (mainPlayer.foodLevel + restoreAmount).coerceAtMost(20)
+        mainPlayer.saturation = (mainPlayer.saturation + saturation).coerceAtMost(20f)
+
+        when (food) {
+            org.bukkit.Material.GOLDEN_APPLE -> {
+                mainPlayer.addPotionEffect(
+                    org.bukkit.potion.PotionEffect(
+                        org.bukkit.potion.PotionEffectType.REGENERATION, 100, 1
+                    )
+                )
+                mainPlayer.addPotionEffect(
+                    org.bukkit.potion.PotionEffect(
+                        org.bukkit.potion.PotionEffectType.ABSORPTION, 2400, 0
+                    )
+                )
+            }
+            org.bukkit.Material.ENCHANTED_GOLDEN_APPLE -> {
+                mainPlayer.addPotionEffect(
+                    org.bukkit.potion.PotionEffect(
+                        org.bukkit.potion.PotionEffectType.REGENERATION, 400, 1
+                    )
+                )
+                mainPlayer.addPotionEffect(
+                    org.bukkit.potion.PotionEffect(
+                        org.bukkit.potion.PotionEffectType.ABSORPTION, 2400, 3
+                    )
+                )
+                mainPlayer.addPotionEffect(
+                    org.bukkit.potion.PotionEffect(
+                        org.bukkit.potion.PotionEffectType.RESISTANCE, 6000, 0  // DAMAGE_RESISTANCE -> RESISTANCE
+                    )
+                )
+                mainPlayer.addPotionEffect(
+                    org.bukkit.potion.PotionEffect(
+                        org.bukkit.potion.PotionEffectType.FIRE_RESISTANCE, 6000, 0
+                    )
+                )
+            }
+            org.bukkit.Material.CHORUS_FRUIT -> {
+                val range = 8.0
+                val loc = mainPlayer.location
+                var attempts = 0
+                var safeLocation: Location? = null
+
+                while (attempts < 16 && safeLocation == null) {
+                    val randomX = loc.x + (Math.random() - 0.5) * 2 * range
+                    val randomZ = loc.z + (Math.random() - 0.5) * 2 * range
+                    val randomY = loc.y + (Math.random() - 0.5) * 2 * (range / 2)
+                    val testLoc = Location(loc.world, randomX, randomY, randomZ)
+
+                    val world = testLoc.world
+                    if (world != null) {
+                        val blockBelow = world.getBlockAt(testLoc.blockX, testLoc.blockY - 1, testLoc.blockZ)
+                        val blockAt = world.getBlockAt(testLoc.blockX, testLoc.blockY, testLoc.blockZ)
+                        val blockAbove = world.getBlockAt(testLoc.blockX, testLoc.blockY + 1, testLoc.blockZ)
+
+                        if (blockBelow.type.isSolid && blockAt.type.isAir && blockAbove.type.isAir) {
+                            safeLocation = testLoc
+                        }
+                    }
+                    attempts++
                 }
-                item.type.name.contains("POTION") -> {
-                    syncActionToAll("§a[오른팔] 포션 마심")
-                }
-                item.type == org.bukkit.Material.MILK_BUCKET -> {
-                    mainPlayer.activePotionEffects.forEach { mainPlayer.removePotionEffect(it.type) }
-                    syncActionToAll("§a[오른팔] 우유 마심 (효과 제거)")
+
+                (safeLocation ?: Location(loc.world,
+                    loc.x + (Math.random() - 0.5) * 2 * range,
+                    loc.y,
+                    loc.z + (Math.random() - 0.5) * 2 * range
+                )).let { mainPlayer.teleport(it) }
+            }
+            org.bukkit.Material.ROTTEN_FLESH -> {
+                if (Math.random() < 0.8) {
+                    mainPlayer.addPotionEffect(
+                        org.bukkit.potion.PotionEffect(
+                            org.bukkit.potion.PotionEffectType.HUNGER, 600, 0
+                        )
+                    )
                 }
             }
-
-            if (itemInHand.amount > 1) {
-                itemInHand.amount -= 1
-            } else {
-                mainPlayer.inventory.setItemInMainHand(null)
+            org.bukkit.Material.PUFFERFISH -> {
+                mainPlayer.addPotionEffect(
+                    org.bukkit.potion.PotionEffect(
+                        org.bukkit.potion.PotionEffectType.POISON, 1200, 1
+                    )
+                )
+                mainPlayer.addPotionEffect(
+                    org.bukkit.potion.PotionEffect(
+                        org.bukkit.potion.PotionEffectType.HUNGER, 300, 2
+                    )
+                )
+                mainPlayer.addPotionEffect(
+                    org.bukkit.potion.PotionEffect(
+                        org.bukkit.potion.PotionEffectType.NAUSEA, 300, 0  // CONFUSION -> NAUSEA
+                    )
+                )
             }
-
-            when (item.type) {
-                org.bukkit.Material.POTION -> {
-                    mainPlayer.inventory.addItem(ItemStack(org.bukkit.Material.GLASS_BOTTLE))
-                }
-                org.bukkit.Material.MILK_BUCKET -> {
-                    mainPlayer.inventory.addItem(ItemStack(org.bukkit.Material.BUCKET))
-                }
-                else -> {}
+            org.bukkit.Material.SPIDER_EYE -> {
+                mainPlayer.addPotionEffect(
+                    org.bukkit.potion.PotionEffect(
+                        org.bukkit.potion.PotionEffectType.POISON, 100, 0
+                    )
+                )
             }
+            org.bukkit.Material.POISONOUS_POTATO -> {
+                if (Math.random() < 0.6) {
+                    mainPlayer.addPotionEffect(
+                        org.bukkit.potion.PotionEffect(
+                            org.bukkit.potion.PotionEffectType.POISON, 100, 0
+                        )
+                    )
+                }
+            }
+            else -> {}
+        }
+    }
 
-            mainPlayer.updateInventory()
-            syncHotbar()
+    private fun applyPotionEffects(item: ItemStack) {
+        val meta = item.itemMeta as? org.bukkit.inventory.meta.PotionMeta ?: return
+
+        if (meta.hasCustomEffects()) {
+            meta.customEffects.forEach { effect ->
+                mainPlayer.addPotionEffect(effect)
+            }
         }
     }
 
@@ -855,13 +1163,22 @@ class HyperSession(
         if (consumingTaskId != -1) {
             Bukkit.getScheduler().cancelTask(consumingTaskId)
             consumingTaskId = -1
-            syncActionToAll("§c[오른팔] 먹기/마시기 취소")
+
+            val currentSlot = mainPlayer.inventory.heldItemSlot
+            val item = mainPlayer.inventory.itemInMainHand.clone()
+
+            mainPlayer.inventory.setItemInMainHand(null)
+            mainPlayer.updateInventory()
+
+            Bukkit.getScheduler().runTaskLater(plugin, Runnable {
+                mainPlayer.inventory.setItemInMainHand(item)
+                mainPlayer.updateInventory()
+                syncHotbar()
+            }, 1L)
+
         }
     }
 
-    fun interactWithEntity(entity: Entity) {
-        syncActionToAll("[오른팔] ${entity.type}와 상호작용")
-    }
 
     private fun getFoodRestoration(food: org.bukkit.Material): Int {
         return when (food) {
@@ -904,14 +1221,13 @@ class HyperSession(
         }
         plugin.playerToSession.remove(mainPlayer.uniqueId)
         plugin.sessions.remove(mainPlayer.uniqueId)
-        mainPlayer.sendMessage("§c[하이퍼스레딩] 세션이 종료되었습니다.")
+        mainPlayer.sendMessage("§c[HyperX] 세션이 종료되었습니다.")
     }
 
     fun handleRightArmAction(event: PlayerInteractEvent) {
         val fakeEvent = PlayerInteractEvent(mainPlayer, event.action, event.item, event.clickedBlock, event.blockFace, event.hand)
         Bukkit.getPluginManager().callEvent(fakeEvent)
         if (!fakeEvent.isCancelled) {
-            mainPlayer.swingMainHand()
             syncActionToAll("[오른팔] ${event.action}")
         }
     }
@@ -920,7 +1236,6 @@ class HyperSession(
         val fakeEvent = PlayerInteractEvent(mainPlayer, event.action, event.item, event.clickedBlock, event.blockFace, event.hand)
         Bukkit.getPluginManager().callEvent(fakeEvent)
         if (!fakeEvent.isCancelled) {
-            mainPlayer.swingOffHand()
             syncActionToAll("[왼팔] ${event.action}")
         }
     }
@@ -944,7 +1259,6 @@ class HyperSession(
     fun attackEntityAsMain(entity: Entity, damage: Double) {
         if (entity is LivingEntity) {
             entity.damage(damage, mainPlayer)
-            mainPlayer.swingMainHand()
             syncActionToAll("[왼팔] ${entity.type} 공격")
         }
     }
@@ -956,9 +1270,30 @@ class HyperSession(
         }
     }
 
+    fun syncDamageToAll(damage: Double) {
+        allControlPlayers.forEach { player ->
+            if (player.isOnline) {
+                val newHealth = (player.health - damage).coerceAtLeast(0.0)
+                player.health = newHealth
+            }
+        }
+    }
+
     fun setSneakAsMain(sneaking: Boolean) {
         mainPlayer.isSneaking = sneaking
         syncActionToAll("[다리] 웅크리기: $sneaking")
+    }
+
+    fun interactWithEntity(entity: Entity) {
+        val fakeEvent = PlayerInteractEntityEvent(
+            mainPlayer,
+            entity,
+            org.bukkit.inventory.EquipmentSlot.HAND
+        )
+        Bukkit.getPluginManager().callEvent(fakeEvent)
+        if (!fakeEvent.isCancelled) {
+            syncActionToAll("[오른팔] ${entity.type}와 상호작용")
+        }
     }
 
     fun setSprintAsMain(sprinting: Boolean) {
